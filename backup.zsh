@@ -1,9 +1,6 @@
 #!/usr/bin/env zsh
-# Default config file
-default_cfg='/usr/local/etc/backup.cfg'
-
-# Default date postfix
-default_postfix=$(date +%F-%H%M)
+set -e
+self_name=$0
 
 function err
 {
@@ -11,30 +8,51 @@ function err
 	return $1
 }
 
-function default_ports
+function cfg_err
 {
-	if [[ -z $port_remote ]]; then
-		case $protocol in
-			('ftp') remote_port='21';;
-			('sftp'|'ssh') remote_port='22';;
-			(*) err 1 "$protocol is not a valid value for the protocol option.";;
-		esac
+	[[ -n $1 ]] && echo "$1 is not set in configuration, but is required by $0 to work." >&2
+	return 5
+}
+
+function usage
+{
+	echo "usage: $self_name [--help|--config]
+	--help    -h - show this message
+	--config  -c - use config from the specified path
+	
+	Default config path /usr/local/etc/backup.cfg will be used if invoked without options"
+}
+
+function read_config
+{
+	source $cfg || err 15 'Config file does not exist'
+	[[ -z $source_dir ]] && cfg_err 'Backup source'
+	[[ -z $remote_host ]] && cfg_err 'Remote host'
+	[[ -z $protocol ]] && cfg_err 'Backup protocol'
+	[[ -z $backup_dir && $protocol != 'ssh' ]] && cfg_err 'Target directory'
+	if [[ -z $local_host ]]; then
+		local_host=$HOST
 	fi
+	src_basename=${source_dir:t}
+	src_basedir=${source_dir:h}
 }
 
 function generate_fullpath
 {
-	src_basename=${src_fullpath:t}
-	src_basedir=${src_fullpath:h}
+	local backup_type
+	local postfix
+	if [[ -z $outfile_postfix ]]; then
+		postfix=$default_postfix
+	else
+		postfix=$outfile_postfix
+	fi
 	if [[ -s $snap_file ]]; then
 		backup_type='incr'
 	else
 		backup_type='full'
 	fi
-	if [[ -z $backup_directory && $protocol != 'ssh' ]]; then
-		err 1 "You have not set the backup directory path."
-	elif [[ -z $backup_filename ]]; then
-		outfile="$backup_directory/$host_local\-$src_basename\_$postfix\_$backup_type.t${compress_format:-ar}"
+	if [[ -z $backup_filename ]]; then
+		outfile="$backup_dir/${local_host}-${src_basename}_${postfix}_${backup_type}.t${compress_format:-'ar'}"
 	else
 		outfile=$backup_filename
 	fi
@@ -42,6 +60,9 @@ function generate_fullpath
 
 function compress # compress to stdout
 {
+	local compress_flag
+	local exclude_option
+	local snapshot_option
 	case $compress_format in
 		('xz') compress_flag='J' ;;
 		('bz2') compress_flag='j' ;;
@@ -56,7 +77,7 @@ function compress # compress to stdout
 			err 1 "Exclusion list $exclude_list is either unreadable or does not exist."
 		fi
 	fi
-	if [[ -n $snap_file && -n $incremental_backup ]]; then
+	if [[ -n $snap_file ]]; then
 		if printf '' >> $snap_file; then
 			snapshot_option='-g'
 		else
@@ -66,22 +87,38 @@ function compress # compress to stdout
 	tar cf$compress_flag - -C $src_basedir $src_basename $snapshot_option $snapshot_file $exclude_option $exclude_list --ignore-failed-read
 }
 
-function encrypt # encrypt if encryption is needed
-{
-	if [[ -n $gnupg_key ]]; then
-		gpg -r $gnupg_key -e -
-	else
-		read _
-		print $_
-	fi
-}
-
 function store # store to local or remote
 {
+	if [[ -z $remote_port ]]; then
+		case $protocol in
+			('ftp'|'ftps') remote_port='21';;
+			('sftp'|'ssh') remote_port='22';;
+			('local') unset remote_port;;
+			(*) err 1 "$protocol is not a valid value for the protocol option.";;
+		esac
+	fi
 	case $protocol in
 		('local') dd of=$outfile ;;
-		('ssh') ssh -p$port_remote $user_remote@$host_remote "dd of=$outfile" ;;
-		('sftp'|'ftp'|'ftps') curl -ksS -T - $protocol://$host_remote:$port_remote/$outfile -u $user_remote:$pass_remote ;;
+		('ssh') ssh -p$remote_port $remote_user@$remote_host "dd of=$outfile" ;;
+		('sftp'|'ftp'|'ftps') curl -ksS -T - $protocol://$remote_host:$remote_port/$outfile -u $remote_user:$remote_pass ;;
 		(*) err 1 'Wrong protocol!' ;;
 	esac
 }
+
+function main
+{
+	while [[ -n $1 ]]; do
+		case $1 in
+			('--help'|'-h') usage; return 0;;
+			('--config'|'-c') shift; opt_cfg=$1; shift;;
+		esac
+	done
+	cfg=${opt_cfg:-'/usr/local/etc/backup.cfg'}
+	default_postfix=$(date +%F-%H%M)
+	read_config
+	generate_fullpath
+	compress | store
+	return 0
+}
+
+main $@
