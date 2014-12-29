@@ -2,6 +2,8 @@
 self_name=$0
 default_cfg='/usr/local/etc/backup.cfg'
 default_postfix=$(date +%F-%H%M)
+default_ftp_port='21'
+default_ssh_port='22'
 
 function err
 {
@@ -26,10 +28,18 @@ function usage
 function apply_config
 {
 	source $cfg || err 15 'Config file does not exist'
-	[[ -z $source_dirs ]] && { cfg_err 'Backup source'; exit 5 }
-	[[ -z $remote_host ]] && { cfg_err 'Remote host'; exit 5 }
-	[[ -z $protocol ]] && { cfg_err 'Backup protocol'; exit 5 }
-	[[ -z $backup_dir && $protocol != 'ssh' ]] && { cfg_err 'Target directory'; exit 5 }
+	if [[ -z $source_dirs ]]; then
+		cfg_err 'Backup source'
+		exit 5
+	fi
+	if [[ -z $remote_host ]]; then
+		cfg_err 'Remote host'
+		exit 5
+	fi
+	if [[ -z $backup_dir && $protocol != 'ssh' ]]; then
+		cfg_err 'Target directory'
+		exit 5
+	fi
 	if [[ -z $local_host ]]; then
 		local_host=$HOST
 	fi
@@ -39,33 +49,34 @@ function apply_config
 	else
 		postfix=$outfile_postfix
 	fi
-	if [[ -z $remote_port ]]; then
-		case $protocol in
-			('ftp'|'ftps') remote_port='21';;
-			('sftp'|'ssh') remote_port='22';;
-			('local') unset remote_port;;
-			(*) err 1 "$protocol is not a valid value for the protocol option.";;
-		esac
+	case $protocol in
+		('ftp'|'ftps') port=${remote_port:-$default_ftp_port};;
+		('sftp'|'ssh') port=${remote_port:-$default_ssh_port};;
+		('local') unset remote_port;;
+		(*) cfg_err 'Backup protocol'; exit 5;;
+	esac
+	if [[ ! $remote_port =~ ^[0-9]+$ ]]; then
+		err 'Remote port is not a numeric value.'
 	fi
 	case $compress_format in
 		('xz') compress_flag='J' ;;
 		('bz2') compress_flag='j' ;;
 		('gz') compress_flag='z' ;;
 		('') unset compress_flag; unset compress_format ;;
-		(*) err 1 "$compress_format is not a valid value for the compression format option.";;
+		(*) err "$compress_format is not a valid value for the compression format option."; exit 5;;
 	esac
 	if [[ -n $exclude_list ]]; then
 		if [[ -r $exclude_list ]]; then
 			exclude_option='-X'
 		else
-			err 1 "Exclusion list $exclude_list is either unreadable or does not exist."
+			err "Exclusion list $exclude_list is either unreadable or does not exist."
 		fi
 	fi
 	if [[ -n $snap_file ]]; then
 		if printf '' >> $snap_file; then
 			snapshot_option='-g'
 		else
-			err 1 "Snapshot file $snap_file cannot be written."
+			err "Snapshot file $snap_file cannot be written."
 		fi
 	fi
 }
@@ -96,9 +107,8 @@ function store # store to local or remote
 {
 	case $protocol in
 		('local') dd of=$outfile ;;
-		('ssh') ssh -p$remote_port $remote_user@$remote_host "dd of=$outfile" ;;
-		('sftp'|'ftp'|'ftps') curl -ksS -T - $protocol://$remote_host:$remote_port/$outfile -u $remote_user:$remote_pass ;;
-		(*) err 1 'Wrong protocol!' ;;
+		('ssh') ssh -p$port $remote_user@$remote_host "dd of=$outfile" ;;
+		('sftp'|'ftp'|'ftps') curl -ksS -T - $protocol://$remote_host:$port/$outfile -u $remote_user:$remote_pass ;;
 	esac
 }
 
