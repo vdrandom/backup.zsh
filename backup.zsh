@@ -82,7 +82,7 @@ function apply_config
 		if [[ -r $exclude_list ]]; then
 			exclude_option='-X'
 		else
-			err "Exclusion list $exclude_list is either unreadable or does not exist."
+			err "Exclusion list $exclude_list is either unreadable or does not exist. Proceeding without it."
 		fi
 	fi
 }
@@ -110,7 +110,7 @@ function compress # compress to stdout
 		if printf '' >> $snapshot_file; then
 			snapshot_option='-g'
 		else
-			err "Snapshot file $snapshot_file cannot be written."
+			err "Snapshot file $snapshot_file cannot be written. Proceeding with full backup."
 		fi
 	fi
 	tar -c$compress_flag $snapshot_option $snapshot_file $exclude_option $exclude_list --ignore-failed-read -C $src_basedir $src_basename
