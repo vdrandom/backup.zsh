@@ -72,8 +72,8 @@ function apply_config
 	fi
 	# set defaults and / or fail to run if something is missing
 	case $protocol in
-		('ftp'|'ftps') port=${remote_port:-$default_ftp_port}; test_remote_settings; return $?;;
-		('sftp'|'ssh') port=${remote_port:-$default_ssh_port}; test_remote_settings; return $?;;
+		('ftp'|'ftps') port=${remote_port:-$default_ftp_port}; test_remote_settings; exit_code=$?; [[ $exit_code -ne 0 ]] && return $exit_code;;
+		('sftp'|'ssh') port=${remote_port:-$default_ssh_port}; test_remote_settings; exit_code=$?; [[ $exit_code -ne 0 ]] && return $exit_code;;
 		('local') unset remote_port;;
 		(*) cfg_err 'protocol'; return 5;;
 	esac
@@ -82,7 +82,6 @@ function apply_config
 		('xz') compress_flag='J' ;;
 		('bz2') compress_flag='j' ;;
 		('gz') compress_flag='z' ;;
-		('') unset compress_flag; unset compress_format ;;
 		(*) err "$compress_format is not a valid value for the compression format option."; return 5;;
 	esac
 	if [[ -n $exclude_list ]]; then
@@ -123,7 +122,7 @@ function compress
 		fi
 	fi
 	# do the magic and spit to stdout
-	tar -c$compress_flag $snapshot_option $snapshot_file $exclude_option $exclude_list --ignore-failed-read -C $src_basedir $src_basename
+	tar -C $src_basedir -c$compress_flag $snapshot_option $snapshot_file $exclude_option $exclude_list --ignore-failed-read $src_basename
 }
 
 # store to local or remote
