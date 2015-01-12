@@ -5,16 +5,19 @@ default_postfix=$(date +%F-%H%M)
 default_ftp_port='21'
 default_ssh_port='22'
 
+# echo to stderr
 function err
 {
 	[[ -n $1 ]] && echo $1 >&2
 }
 
+# standard configuration error message to stderr
 function cfg_err
 {
 	[[ -n $1 ]] && echo "$1 is not set in configuration, but is required by $self_name to work." >&2
 }
 
+# print help
 function usage
 {
 	echo "usage: $self_name [--help|--conf /path/to/config]
@@ -24,9 +27,10 @@ function usage
 	Default config path $default_cfg will be used if invoked without options"
 }
 
-# function to read the configuration file and spit out some exceptions if stuff is missing
+# read the configuration file and spit out some exceptions if stuff is missing
 function apply_config
 {
+	# testing remote settings only needed for non-local backups
 	function test_remote_settings
 	{
 		if [[ -z $remote_host ]]; then
@@ -46,7 +50,9 @@ function apply_config
 			return 5
 		fi
 	}
+	# import contents of the config (including functions if present)
 	source $cfg || { err "Config file $cfg is unreadable or does not exist"; return 15 }
+	# do the tests
 	if [[ -z $source_dirs ]]; then
 		cfg_err 'source_dirs'
 		return 5
@@ -59,18 +65,19 @@ function apply_config
 		err 'local_host is not set, using hostname.'
 		local_host=$HOST
 	fi
-	# date postfix
 	if [[ -z $outfile_postfix ]]; then
 		postfix=$default_postfix
 	else
 		postfix=$outfile_postfix
 	fi
+	# set defaults and / or fail to run if something is missing
 	case $protocol in
 		('ftp'|'ftps') port=${remote_port:-$default_ftp_port}; test_remote_settings; return $?;;
 		('sftp'|'ssh') port=${remote_port:-$default_ssh_port}; test_remote_settings; return $?;;
 		('local') unset remote_port;;
 		(*) cfg_err 'protocol'; return 5;;
 	esac
+	# set variables for tar command
 	case $compress_format in
 		('xz') compress_flag='J' ;;
 		('bz2') compress_flag='j' ;;
@@ -104,8 +111,10 @@ function generate_fullpath
 	fi
 }
 
-function compress # compress to stdout
+# compress to stdout
+function compress
 {
+	# snapshot file is per directory so we cannot test it within apply_config()
 	if [[ -n $snapshot_file ]]; then
 		if printf '' >> $snapshot_file; then
 			snapshot_option='-g'
@@ -113,11 +122,14 @@ function compress # compress to stdout
 			err "Snapshot file $snapshot_file cannot be written. Proceeding with full backup."
 		fi
 	fi
+	# do the magic and spit to stdout
 	tar -c$compress_flag $snapshot_option $snapshot_file $exclude_option $exclude_list --ignore-failed-read -C $src_basedir $src_basename
 }
 
-function store # store to local or remote
+# store to local or remote
+function store
 {
+	# take from stdin and do the magic
 	case $protocol in
 		('local') dd of=$outfile ;;
 		('ssh') ssh -p$port $remote_user@$remote_host "dd of=$outfile" ;;
@@ -125,32 +137,41 @@ function store # store to local or remote
 	esac
 }
 
+# self explanatory, using case statement, so no one dash multiple opts supported
 function parse_opts
 {
 	while [[ -n $1 ]]; do
 		case $1 in
 			('--help'|'-h') usage; exit 0;;
 			('--conf'|'-c') shift; opt_cfg=$1; shift;;
-			('') opt_cfg=$default_cfg;;
 			(*) err "unknown parameter $1"; exit 127;;
 		esac
 	done
 }
 
+# the main logic
 function main
 {
+	# parse options
 	parse_opts $@
+	# set default config if $opt_cfg is not defined via an option
 	cfg=${opt_cfg:-$default_cfg}
+	# run config tests and fill in defaults
 	apply_config
+	# fail in case something goes wrong
 	local apply_config_returns=$?
 	[[ $apply_config_returns -ne 0 ]] && return $apply_config_returns
+	# run backups per directory
 	for i in $source_dirs; do
+		# prepare the set of variables
 		unset src_basename src_basedir outfile
 		IFS=':' read source_dir snapshot_file <<< $i
 		src_basename=${source_dir:t}
 		src_basedir=${source_dir:h}
+		# generate the backups path
 		generate_fullpath
-		echo "Creating a backup of $source_dir. Using protocol $protocol to store it in $outfile."
+		err "Creating a backup of $source_dir via $protocol to store it in $outfile."
+		# pipe magic into magic
 		compress | store
 	done
 	return 0
