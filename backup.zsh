@@ -1,5 +1,7 @@
 #!/usr/bin/env zsh
 self_name=$0
+
+# some hardcoded defaults
 default_cfg='/etc/backup.zsh.cfg'
 default_postfix=$(date +%F-%H%M)
 default_ftp_port='21'
@@ -104,7 +106,7 @@ function generate_fullpath
 		backup_type='full'
 	fi
 	if [[ -z $backup_filename ]]; then
-		outfile="$backup_dir/${local_host}-${src_basename}_${postfix}_${backup_type}.t${compress_format:-'ar'}"
+		outfile="$backup_dir/${local_host}-${src_basename}_${postfix}_${backup_type}${gnupg_key:+'.gpg.'}.t${compress_format:-'ar'}"
 	else
 		outfile=$backup_filename
 	fi
@@ -136,7 +138,13 @@ function store
 	esac
 }
 
-# self explanatory, using case statement, so no one dash multiple opts supported
+# encrypt asymmetrically via gpg
+function encrypt
+{
+	gpg -r $gnupg_key -e -
+}
+
+# self explanatory, using case statement, so one dash multiple opts is not supported
 function parse_opts
 {
 	while [[ -n $1 ]]; do
@@ -171,7 +179,11 @@ function main
 		generate_fullpath
 		err "Creating a backup of $source_dir via $protocol to store it in $outfile."
 		# pipe magic into magic
-		compress | store
+		if [[ -n $gnupg_key ]]; then
+			compress | encrypt | store
+		else
+			compress | store
+		fi
 	done
 	return 0
 }
