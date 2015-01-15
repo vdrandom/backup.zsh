@@ -48,42 +48,34 @@ function apply_config
 			return 5
 		fi
 		if [[ -n $port && ! $port =~ ^[0-9]+$ ]]; then
-			err 'Remote port is not a numeric value.'
+			err 'remote_port is not a numeric value.'
 			return 5
 		fi
 	}
 	# import contents of the config (including functions if present)
 	source $cfg || { err "Config file $cfg is unreadable or does not exist"; return 15 }
+	hostname=${local_host:-$HOST}
+	postfix=${outfile_postfix:-$default_postfix}
 	# do the tests
 	if [[ -z $source_dirs ]]; then
 		cfg_err 'source_dirs'
 		return 5
 	fi
-	if [[ -z $backup_dir && $protocol != 'ssh' ]]; then
-		cfg_err 'backup_dir'
-		return 5
-	fi
-	if [[ -z $local_host ]]; then
-		err 'local_host is not set, using hostname.'
-		local_host=$HOST
-	fi
-	if [[ -z $outfile_postfix ]]; then
-		postfix=$default_postfix
-	else
-		postfix=$outfile_postfix
-	fi
 	# set defaults and / or fail to run if something is missing
+	local exit_code
 	case $protocol in
 		('ftp'|'ftps') port=${remote_port:-$default_ftp_port}; test_remote_settings; exit_code=$?; [[ $exit_code -ne 0 ]] && return $exit_code;;
 		('sftp'|'ssh') port=${remote_port:-$default_ssh_port}; test_remote_settings; exit_code=$?; [[ $exit_code -ne 0 ]] && return $exit_code;;
 		('local') unset remote_port;;
 		(*) cfg_err 'protocol'; return 5;;
 	esac
+	unset exit_code
 	# set variables for tar command
 	case $compress_format in
 		('xz') compress_flag='J' ;;
 		('bz2') compress_flag='j' ;;
 		('gz') compress_flag='z' ;;
+		('') unset compress_flag ;;
 		(*) err "$compress_format is not a valid value for the compression format option."; return 5;;
 	esac
 	if [[ -n $exclude_list ]]; then
@@ -106,7 +98,7 @@ function generate_fullpath
 		backup_type='full'
 	fi
 	if [[ -z $backup_filename ]]; then
-		outfile="$backup_dir/${local_host}-${src_basename}_${postfix}_${backup_type}${gnupg_key:+'.gpg.'}.t${compress_format:-'ar'}"
+		outfile="${backup_dir}${backup_dir:+/}${hostname}-${src_basename}_${postfix}_${backup_type}${gnupg_key:+.gpg.}.t${compress_format:-ar}"
 	else
 		outfile=$backup_filename
 	fi
@@ -150,7 +142,7 @@ function parse_opts
 	while [[ -n $1 ]]; do
 		case $1 in
 			('--help'|'-h') usage; exit 0;;
-			('--conf'|'-c') shift; opt_cfg=$1; shift;;
+			('--conf'|'-c') shift; opt_cfg=$1; return 0;;
 			(*) err "unknown parameter $1"; exit 127;;
 		esac
 	done
@@ -166,8 +158,9 @@ function main
 	# run config tests and fill in defaults
 	apply_config
 	# fail in case something goes wrong
-	local apply_config_returns=$?
-	[[ $apply_config_returns -ne 0 ]] && return $apply_config_returns
+	local exit_code=$?
+	[[ $exit_code -ne 0 ]] && return $exit_code
+	unset exit_code
 	# run backups per directory
 	for i in $source_dirs; do
 		# prepare the set of variables
