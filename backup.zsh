@@ -47,7 +47,7 @@ function apply_config
 			cfg_err 'remote_pass'
 			return 5
 		fi
-		if [[ -n $port && ! $port =~ ^[0-9]+$ ]]; then
+		if ! (( port )); then
 			err 'remote_port is not a numeric value.'
 			return 5
 		fi
@@ -64,8 +64,8 @@ function apply_config
 	# set defaults and / or fail to run if something is missing
 	local exit_code
 	case $protocol in
-		('ftp'|'ftps') port=${remote_port:-$default_ftp_port}; test_remote_settings; exit_code=$?; [[ $exit_code -ne 0 ]] && return $exit_code;;
-		('sftp'|'ssh') port=${remote_port:-$default_ssh_port}; test_remote_settings; exit_code=$?; [[ $exit_code -ne 0 ]] && return $exit_code;;
+		('ftp'|'ftps') port=${remote_port:-$default_ftp_port}; test_remote_settings; exit_code=$?; (( exit_code )) && return $exit_code;;
+		('sftp'|'ssh') port=${remote_port:-$default_ssh_port}; test_remote_settings; exit_code=$?; (( exit_code )) && return $exit_code;;
 		('local') unset remote_port;;
 		(*) cfg_err 'protocol'; return 5;;
 	esac
@@ -159,7 +159,7 @@ function main
 	apply_config
 	# fail in case something goes wrong
 	local exit_code=$?
-	[[ $exit_code -ne 0 ]] && return $exit_code
+	(( exit_code )) && return $exit_code
 	unset exit_code
 	# run backups per directory
 	for i in $source_dirs; do
