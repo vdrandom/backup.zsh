@@ -10,23 +10,22 @@ default_ssh_port='22'
 # echo to stderr
 function err
 {
-	[[ -n $1 ]] && echo $1 >&2
+	[[ -n $1 ]] && printf "%s\n" $1 >&2
 }
 
 # standard configuration error message to stderr
 function cfg_err
 {
-	[[ -n $1 ]] && echo "$1 is not set in configuration, but is required by $self_name to work." >&2
+	[[ -n $1 ]] && printf "%s is not set in configuration, but is required by %s to work.\n" $1 $self_name >&2
 }
 
 # print help
 function usage
 {
-	echo "usage: $self_name [--help|--conf /path/to/config]
-	--help  -h   show this message
-	--conf  -c   use config from the specified path
-
-	Default config path $default_cfg will be used if invoked without options"
+	printf "usage: %s [--help|--conf /path/to/config]\n" $self_name
+	printf "       --help  -h   show this message\n"
+	printf "       --conf  -c   use config from the specified path\n\n"
+	printf "Default config path %s will be used if invoked without options\n" $default_cfg
 }
 
 # read the configuration file and spit out some exceptions if stuff is missing
